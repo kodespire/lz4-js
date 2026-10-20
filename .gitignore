@@ -1,0 +1,8 @@
+node_modules/
+build/
+dist/
+prebuilds/
+*.tgz
+.vitest-cache/
+coverage/
+out/

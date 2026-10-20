@@ -1,0 +1,83 @@
+{
+  "name": "@kodespire/lz4-js",
+  "version": "0.1.0",
+  "description": "LZ4 compression for Node.js, Bun, Deno, browsers and edge runtimes. Native bindings to the official lz4/lz4 library with a WebAssembly fallback. Frame and raw block formats.",
+  "keywords": [
+    "lz4",
+    "lz4hc",
+    "compression",
+    "decompression",
+    "wasm",
+    "napi",
+    "stream"
+  ],
+  "license": "MIT",
+  "author": "kodespire",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kodespire/lz4-js.git"
+  },
+  "bugs": "https://github.com/kodespire/lz4-js/issues",
+  "homepage": "https://github.com/kodespire/lz4-js#readme",
+  "type": "module",
+  "sideEffects": false,
+  "gypfile": false,
+  "engines": {
+    "node": ">=22.12"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/public.d.ts",
+      "workerd": "./dist/entry-workerd.js",
+      "deno": "./dist/entry-wasm.js",
+      "browser": "./dist/entry-wasm.js",
+      "node": "./dist/entry-node.js",
+      "default": "./dist/entry-wasm.js"
+    },
+    "./wasm": {
+      "types": "./dist/public.d.ts",
+      "workerd": "./dist/entry-workerd.js",
+      "default": "./dist/entry-wasm.js"
+    },
+    "./lz4.wasm": "./dist/lz4.wasm",
+    "./package.json": "./package.json"
+  },
+  "imports": {
+    "#load-wasm": {
+      "types": "./dist/load-wasm-fetch.d.ts",
+      "node": "./dist/load-wasm-node.js",
+      "default": "./dist/load-wasm-fetch.js"
+    }
+  },
+  "types": "./dist/public.d.ts",
+  "files": [
+    "dist",
+    "prebuilds",
+    "THIRD_PARTY_NOTICES.md"
+  ],
+  "scripts": {
+    "build": "npm run build:native && npm run build:wasm && npm run build:ts",
+    "build:native": "node-gyp rebuild",
+    "build:wasm": "node scripts/build-wasm.mjs",
+    "build:ts": "node scripts/build-ts.mjs",
+    "build:prebuilds": "prebuildify --napi --strip --target 22.0.0",
+    "fixtures": "node scripts/make-fixtures.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "node-gyp-build": "^4.8.4"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "@vitest/browser-playwright": "^5.0.5",
+    "fast-check": "^4.10.2",
+    "node-addon-api": "^8.9.2",
+    "node-gyp": "^13.1.0",
+    "playwright": "^1.64.1",
+    "prebuildify": "^6.0.1",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.5"
+  }
+}
