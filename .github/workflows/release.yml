@@ -1,0 +1,164 @@
+# Builds the native addon for every supported platform, packs the npm tarball
+# with all of them inside, checks the tarball installs and runs on each
+# platform, and (for v* tags) publishes it with provenance.
+#
+# Run it by hand (Actions > Release > Run workflow) to get the tarball as an
+# artifact without publishing.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  wasm:
+    name: Build WebAssembly
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - run: bash scripts/ci/setup-emsdk.sh
+      - run: source ~/emsdk/emsdk_env.sh && node scripts/build-wasm.mjs
+      - uses: actions/upload-artifact@v7
+        with:
+          name: wasm
+          path: out/wasm/lz4.wasm
+          if-no-files-found: error
+
+  prebuild:
+    name: Prebuild ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: darwin-arm64, os: macos-latest, args: --arch arm64 }
+          - { name: darwin-x64, os: macos-latest, args: --arch x64 }
+          - { name: win32-x64, os: windows-latest, args: --arch x64 }
+          - { name: win32-arm64, os: windows-11-arm, args: --arch arm64 }
+          - { name: linux-x64-glibc, os: ubuntu-latest, linux: glibc }
+          - { name: linux-arm64-glibc, os: ubuntu-24.04-arm, linux: glibc }
+          - { name: linux-x64-musl, os: ubuntu-latest, linux: musl }
+          - { name: linux-arm64-musl, os: ubuntu-24.04-arm, linux: musl }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - if: matrix.linux
+        run: bash scripts/ci/prebuild-linux.sh ${{ matrix.linux }}
+      - if: ${{ !matrix.linux }}
+        run: |
+          npm ci --ignore-scripts
+          npx prebuildify --napi --strip --target 22.0.0 ${{ matrix.args }}
+        shell: bash
+      - uses: actions/upload-artifact@v7
+        with:
+          name: prebuild-${{ matrix.name }}
+          path: prebuilds
+          if-no-files-found: error
+
+  pack:
+    name: Pack
+    needs: [wasm, prebuild]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - uses: actions/download-artifact@v8
+        with:
+          name: wasm
+          path: out/wasm
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: prebuild-*
+          path: prebuilds
+          merge-multiple: true
+      - run: npm ci
+      - run: npm run build:ts
+      - run: ls -R prebuilds && npm pack
+      - uses: actions/upload-artifact@v7
+        with:
+          name: tarball
+          path: kodespire-lz4-js-*.tgz
+          if-no-files-found: error
+
+  verify:
+    name: Verify ${{ matrix.os }}${{ matrix.container && ' (' }}${{ matrix.container }}${{ matrix.container && ')' }}
+    needs: pack
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-latest }
+          - { os: macos-15-intel }
+          - { os: windows-latest }
+          - { os: windows-11-arm }
+          - { os: ubuntu-latest }
+          - { os: ubuntu-24.04-arm }
+          - { os: ubuntu-latest, container: 'node:22-alpine' }
+          - { os: ubuntu-latest, container: 'rockylinux/rockylinux:8' }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: test/smoke
+      - uses: actions/setup-node@v7
+        if: ${{ !matrix.container }}
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@v8
+        with:
+          name: tarball
+      - name: Install and run the smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p consumer
+          cp test/smoke/smoke.mjs consumer/
+          cp kodespire-lz4-js-*.tgz consumer/package.tgz
+          test_cmd='npm init -y >/dev/null && npm install --no-audit --no-fund ./package.tgz && EXPECT_BACKEND=native node smoke.mjs'
+          case "${{ matrix.container }}" in
+            '') (cd consumer && sh -euc "$test_cmd") ;;
+            rockylinux*)
+              # glibc 2.28, the oldest the Linux prebuild targets. Node from the official tarball.
+              docker run --rm -v "$PWD/consumer:/w" -w /w "${{ matrix.container }}" bash -euo pipefail -c "
+                dnf -y -q install xz >/dev/null
+                tarball=\$(curl -fsSL https://nodejs.org/dist/latest-v22.x/SHASUMS256.txt | grep -o 'node-v[0-9.]*-linux-x64.tar.xz' | head -1)
+                curl -fsSL https://nodejs.org/dist/latest-v22.x/\$tarball | tar -xJ -C /opt
+                export PATH=/opt/\${tarball%.tar.xz}/bin:\$PATH
+                $test_cmd" ;;
+            *) docker run --rm -v "$PWD/consumer:/w" -w /w "${{ matrix.container }}" sh -euc "$test_cmd" ;;
+          esac
+
+  publish:
+    name: Publish to npm
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # npm trusted publishing and provenance
+    steps:
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - uses: actions/download-artifact@v8
+        with:
+          name: tarball
+      - run: npm publish kodespire-lz4-js-*.tgz --access public --provenance

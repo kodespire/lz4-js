@@ -1,0 +1,63 @@
+# Weekly: if lz4/lz4 has published a newer release than deps/lz4 is pinned
+# to, open a pull request that moves the submodule to it. CI then runs the
+# full test suite against the new version.
+#
+# Needs "Allow GitHub Actions to create and approve pull requests" enabled in
+# Settings > Actions > General. Pull requests opened with GITHUB_TOKEN do not
+# trigger CI on their own, so the job starts the CI workflow on the branch itself.
+name: Update lz4
+
+on:
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: write
+  pull-requests: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
+          fetch-depth: 0
+      - name: Compare with the latest upstream release
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          latest="$(gh release view -R lz4/lz4 --json tagName -q .tagName)"
+          latest_sha="$(gh api "repos/lz4/lz4/commits/$latest" --jq .sha)"
+          current_sha="$(git -C deps/lz4 rev-parse HEAD)"
+          current="v$(sed -n "s/export const LZ4_VERSION = '\(.*\)';/\1/p" src/version.ts)"
+          echo "latest=$latest" >> "$GITHUB_OUTPUT"
+          echo "current=$current" >> "$GITHUB_OUTPUT"
+          echo "outdated=$([ "$latest_sha" = "$current_sha" ] && echo false || echo true)" >> "$GITHUB_OUTPUT"
+          echo "pinned: $current ($current_sha), latest: $latest ($latest_sha)"
+      - name: Open a pull request
+        if: steps.check.outputs.outdated == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LATEST: ${{ steps.check.outputs.latest }}
+          CURRENT: ${{ steps.check.outputs.current }}
+        run: |
+          branch="update-lz4-$LATEST"
+          if git ls-remote --exit-code --heads origin "$branch" >/dev/null; then
+            echo "branch $branch already exists"; exit 0
+          fi
+          git -C deps/lz4 fetch --depth 1 origin tag "$LATEST"
+          git -C deps/lz4 checkout "$LATEST"
+          version="${LATEST#v}"
+          sed -i "s/export const LZ4_VERSION = '.*';/export const LZ4_VERSION = '$version';/" src/version.ts
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$branch"
+          git add deps/lz4 src/version.ts
+          git commit -m "Update lz4 to $LATEST"
+          git push origin "$branch"
+          gh workflow run ci.yml --ref "$branch"
+          gh pr create --title "Update lz4 to $LATEST" --body "Moves deps/lz4 from $CURRENT to [$LATEST](https://github.com/lz4/lz4/releases/tag/$LATEST). CI runs the full suite against it. Check the release notes for changes to level ranges or defaults (src/version.ts, csrc/ljs.c) and for new files in lib/ (scripts/lz4-sources.cjs lists the four compiled files) before merging."

@@ -1,0 +1,2 @@
+# Test fixtures are compared byte for byte: never convert line endings.
+test/fixtures/** binary
