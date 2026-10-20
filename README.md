@@ -7,7 +7,7 @@ LZ4 compression for Node.js, Bun, Deno, browsers and edge runtimes, with one API
 - **The official library.** Compiled from [lz4/lz4](https://github.com/lz4/lz4) v1.10.0, pinned as a git submodule. Only its BSD-licensed `lib/` is compiled in. A weekly job opens a PR when upstream releases.
 - **Native where possible, WebAssembly everywhere else.** Node.js and Bun use a Node-API addon. Browsers, Deno and Workers use WebAssembly built from the same C code. If no prebuilt binary matches your platform, the package switches to WebAssembly on its own.
 - **No install scripts.** Prebuilt binaries ship inside the package. `npm install` never downloads or compiles anything.
-- **Never returns partial data.** Cut-off frames, corrupt input and output over your size limit all throw. They never return what was decoded so far.
+- **Never returns partial data.** Cut-off frames, corrupt input and output over your size limit all throw. They never return what was decoded so far. (Decompress streams pass data on as it decodes, and then error. See [Streams](#streams).)
 - **Both formats.** The frame format (what the `lz4` command-line tool reads and writes) by default, and the raw block format through separate functions.
 
 Part of the [compression-js](https://github.com/kodespire/compression-js) family.
@@ -82,6 +82,8 @@ await pipeline(
 ```
 
 A compress stream never knows the total size, so its frame does not record one, and `contentSize` is not one of its options.
+
+A decompress stream passes data on as soon as it is decoded. If the input then turns out to be cut off, corrupt or over `maxOutputSize`, the stream errors. Whatever it already produced is a prefix of the content, and must be discarded, like a failed download.
 
 ### Synchronous calls
 

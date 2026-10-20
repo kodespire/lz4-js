@@ -45,7 +45,8 @@ export function createApi(provider: BackendProvider) {
   function withBackend<T>(inputs: (Uint8Array | null)[], call: (backend: Backend, inputs: (Uint8Array | null)[]) => T | Promise<T>): Promise<T> {
     const backend = provider.ready();
     if (backend) return Promise.resolve(call(backend, inputs));
-    const copies = inputs.map((input) => input && input.slice());
+    // new Uint8Array(), not .slice(): Buffer.prototype.slice returns a view.
+    const copies = inputs.map((input) => input && new Uint8Array(input));
     return provider.get().then((b) => call(b, copies));
   }
 

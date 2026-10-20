@@ -202,7 +202,10 @@ int ljs_cstream_create(int level, int block_size, int flags, const uint8_t* dict
   do {                                                                 \
     size_t r_;                                                         \
     rc = ljs_buf_reserve(out, (need), detail);                         \
-    if (rc != LJS_OK) return rc;                                       \
+    if (rc != LJS_OK) {                                                \
+      stream->failed = 1; /* earlier input may be consumed: no gaps */ \
+      return rc;                                                       \
+    }                                                                  \
     r_ = (call);                                                       \
     if (LZ4F_isError(r_)) {                                            \
       stream->failed = 1;                                              \
@@ -322,7 +325,10 @@ int ljs_dstream_push(ljs_dstream* stream, const uint8_t* src, size_t src_size,
 
     if (out->size == out->cap) {
       rc = ljs_buf_reserve(out, 65536, detail);
-      if (rc != LJS_OK) return rc;
+      if (rc != LJS_OK) {
+        stream->failed = 1; /* output so far is lost: never resume with a gap */
+        return rc;
+      }
     }
     /* Never let liblz4 write more than one byte past the limit: that byte is
      * how we detect "too big" without decoding the rest. */

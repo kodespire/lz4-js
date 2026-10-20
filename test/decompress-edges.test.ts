@@ -204,7 +204,7 @@ describe.each(backends)('%s backend: truncated and invalid input', (_name, z) =>
   });
 
   it('maxOutputSize stops a decompression bomb early', async () => {
-    // 1 GiB of zeros, compressed by streaming 16 MiB chunks.
+    // 256 MiB of zeros, compressed by streaming 16 MiB chunks.
     const zeros = new Uint8Array(16 << 20);
     const parts: Uint8Array[] = [];
     const stream = z.createCompressStream({ blockSize: 4194304 });
@@ -212,15 +212,21 @@ describe.each(backends)('%s backend: truncated and invalid input', (_name, z) =>
     const reading = (async () => {
       for await (const p of stream.readable as unknown as AsyncIterable<Uint8Array>) parts.push(p);
     })();
-    for (let i = 0; i < 64; i++) await writer.write(zeros);
+    for (let i = 0; i < 16; i++) await writer.write(zeros);
     await writer.close();
     await reading;
     const bomb = concat(...parts);
-    expect(bomb.length).toBeLessThan(5_000_000);
+    expect(bomb.length).toBeLessThan(1_200_000);
 
-    const started = performance.now();
-    expect(await errorCode(() => z.decompress(bomb, { maxOutputSize: 10 << 20 }))).toBe('ERR_LZ4_OUTPUT_LIMIT');
-    expect(performance.now() - started).toBeLessThan(5000);
+    // "Early" means it stops near the limit, not after decoding everything: hitting
+    // a 1 MiB limit must take a small fraction of the time a full decode takes.
+    let started = performance.now();
+    expect((await z.decompress(bomb)).length).toBe(256 << 20);
+    const full = performance.now() - started;
+    started = performance.now();
+    expect(await errorCode(() => z.decompress(bomb, { maxOutputSize: 1 << 20 }))).toBe('ERR_LZ4_OUTPUT_LIMIT');
+    const limited = performance.now() - started;
+    expect(limited, `limited ${limited.toFixed(1)} ms vs full ${full.toFixed(1)} ms`).toBeLessThan(full / 4);
   });
 
   it('maxOutputSize: 0 accepts only empty output', () => {

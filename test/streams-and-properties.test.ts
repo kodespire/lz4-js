@@ -1,6 +1,9 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
+import { createApi } from '../dist/api.js';
+import { compileWasm, compileWasmSync } from '../dist/load-wasm-node.js';
+import { createWasmProvider } from '../dist/wasm-provider.js';
 import { backends, concat, errorCode, pipeChunks, randomBytes, textBytes } from './helpers.js';
 
 describe.each(backends)('%s backend: streams', (_name, z) => {
@@ -66,7 +69,7 @@ describe.each(backends)('%s backend: streams', (_name, z) => {
     expect(await pipeChunks(z.createDecompressStream({ dictionary }), two, () => 100)).toEqualBytes(concat(src, src));
   });
 
-  it('the dictionary is copied: changing the caller’s buffer mid-stream has no effect', async () => {
+  it('changing the caller’s dictionary after creating a stream has no effect', async () => {
     const dictionary = textBytes(8_000, 6);
     const src = textBytes(20_000, 6);
     const frame = z.compressSync(src, { dictionary });
@@ -85,6 +88,8 @@ describe.each(backends)('%s backend: streams', (_name, z) => {
     expect(await reading).toEqualBytes(src);
   });
 
+  // On WebAssembly a push runs synchronously, so this cancels between pushes there;
+  // only the native addon can have a push in flight on another thread.
   it('cancelling a stream while a chunk is being processed is clean', async () => {
     const big = textBytes(16 << 20, 31);
     const frame = z.compressSync(big, 1);
@@ -115,12 +120,59 @@ describe.each(backends)('%s backend: streams', (_name, z) => {
     blockOutputs.forEach((out, i) => expect(out).toEqualBytes(inputs[i]!));
   });
 
-  it('async calls copy their input: changing it after the call has no effect', async () => {
-    const src = textBytes(2 << 20, 41);
-    const copy = src.slice();
-    const pending = z.compress(src);
-    src.fill(0);
-    expect(z.decompressSync(await pending)).toEqualBytes(copy);
+  it('async calls read their input before returning: changing it afterwards has no effect', async () => {
+    for (const src of [textBytes(2 << 20, 41), Buffer.from(textBytes(2 << 20, 42))]) {
+      const copy = src.slice(0); // a Buffer's .slice() is a view, so copy explicitly below
+      const original = new Uint8Array(copy);
+      const pending = z.compress(src);
+      src.fill(0);
+      expect(z.decompressSync(await pending)).toEqualBytes(original);
+    }
+  });
+});
+
+// A fresh WebAssembly provider that has not loaded yet: calls made now have to
+// wait for the module, and must copy their inputs before they do.
+describe('async calls made while the WebAssembly module is still loading', () => {
+  const fresh = () => createApi(createWasmProvider(compileWasm, compileWasmSync));
+  const kinds = [['Uint8Array', (b: Uint8Array) => b.slice()], ['Buffer', (b: Uint8Array) => Buffer.from(b)]] as const;
+
+  it.each(kinds)('read a %s before returning', async (_kind, make) => {
+    const src = textBytes(300_000, 43);
+    const frame = backends[0][1].compressSync(src);
+    const block = backends[0][1].compressBlockSync(src);
+    const inputs = { src: make(src), frame: make(frame), block: make(block) };
+
+    let api = fresh();
+    const compressed = api.compress(inputs.src);
+    inputs.src.fill(0x41);
+    expect(backends[0][1].decompressSync(await compressed)).toEqualBytes(src);
+
+    api = fresh();
+    const decompressed = api.decompress(inputs.frame);
+    inputs.frame.fill(0);
+    expect(await decompressed).toEqualBytes(src);
+
+    api = fresh();
+    const blockOut = api.decompressBlock(inputs.block, src.length);
+    inputs.block.fill(0);
+    expect(await blockOut).toEqualBytes(src);
+
+    api = fresh();
+    inputs.src.set(src);
+    const blockIn = api.compressBlock(inputs.src);
+    inputs.src.fill(0x42);
+    expect(backends[0][1].decompressBlockSync(await blockIn, src.length)).toEqualBytes(src);
+  });
+
+  it.each(kinds)('read a %s dictionary before returning, for streams', async (_kind, make) => {
+    const dictionary = textBytes(8_000, 44);
+    const src = textBytes(20_000, 44);
+    const frame = backends[0][1].compressSync(src, { dictionary });
+    const mutable = make(dictionary);
+    const stream = fresh().createDecompressStream({ dictionary: mutable });
+    mutable.fill(0);
+    expect(await pipeChunks(stream, frame)).toEqualBytes(src);
   });
 });
 
