@@ -138,6 +138,8 @@ export interface Backend {
 
 /** @internal How an entry point supplies its backend to the public API. */
 export interface BackendProvider {
+  /** The backend if it is already loaded, without waiting. */
+  ready(): Backend | undefined;
   get(): Promise<Backend>;
   getSync(): Backend;
   init(source?: WasmSource): Promise<void>;

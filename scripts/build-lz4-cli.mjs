@@ -16,8 +16,8 @@ export function buildCli() {
   if (existsSync(cliPath)) return cliPath;
   mkdirSync(work, { recursive: true });
   // Build in a copy so the submodule's working tree stays clean.
-  for (const dir of ['lib', 'programs']) {
-    cpSync(join(root, 'deps', 'lz4', dir), join(work, dir), { recursive: true });
+  for (const entry of ['lib', 'programs', 'Makefile.inc']) {
+    cpSync(join(root, 'deps', 'lz4', entry), join(work, entry), { recursive: true });
   }
   execFileSync('make', ['-j8', 'lz4'], { cwd: join(work, 'programs'), stdio: ['ignore', 'ignore', 'inherit'] });
   return cliPath;

@@ -1,0 +1,3 @@
+name = "lz4-js-smoke"
+main = "worker.mjs"
+compatibility_date = "2025-09-01"

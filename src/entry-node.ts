@@ -22,6 +22,7 @@ function tryNative(): Backend | undefined {
 }
 
 const provider: BackendProvider = {
+  ready: () => tryNative() ?? wasm.ready(),
   get: async () => tryNative() ?? wasm.get(),
   getSync: () => tryNative() ?? wasm.getSync(),
   init: async (source) => {

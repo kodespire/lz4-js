@@ -9,6 +9,7 @@ import {
 import {
   MODE_CONTINUE,
   MODE_END,
+  type Backend,
   type BackendKind,
   type BackendProvider,
   type BlockCompressOptions,
@@ -36,12 +37,23 @@ export function isLz4Frame(data: Bytes): boolean {
 }
 
 export function createApi(provider: BackendProvider) {
+  /**
+   * Starts an async call. Like the sync functions, it reads the caller's bytes before
+   * returning, so they can be reused right away: a loaded backend copies them at once,
+   * and while the backend is still loading they are copied here.
+   */
+  function withBackend<T>(inputs: (Uint8Array | null)[], call: (backend: Backend, inputs: (Uint8Array | null)[]) => T | Promise<T>): Promise<T> {
+    const backend = provider.ready();
+    if (backend) return Promise.resolve(call(backend, inputs));
+    const copies = inputs.map((input) => input && input.slice());
+    return provider.get().then((b) => call(b, copies));
+  }
+
   /** Compresses `data` into a single LZ4 frame. Strings are encoded as UTF-8. */
   async function compress(data: Bytes | string, options?: CompressOptions | number): Promise<Uint8Array> {
     const o = resolveCompressOptions(options, 'compress');
-    const input = toInputBytes(data);
-    const backend = await provider.get();
-    return backend.compress(input, o.level, o.blockSize, o.flags, o.dictionary);
+    return withBackend([toInputBytes(data), o.dictionary], (b, [input, dict]) =>
+      b.compress(input!, o.level, o.blockSize, o.flags, dict!));
   }
 
   /** Synchronous `compress`. In browsers and edge runtimes, call `await init()` first. */
@@ -56,9 +68,8 @@ export function createApi(provider: BackendProvider) {
    */
   async function decompress(data: Bytes, options?: DecompressOptions): Promise<Uint8Array> {
     const o = resolveDecompressOptions(options, 'decompress');
-    const input = toBytes(data, 'data');
-    const backend = await provider.get();
-    return backend.decompress(input, o.dictionary, o.maxOutputSize);
+    return withBackend([toBytes(data, 'data'), o.dictionary], (b, [input, dict]) =>
+      b.decompress(input!, dict!, o.maxOutputSize));
   }
 
   /** Synchronous `decompress`. In browsers and edge runtimes, call `await init()` first. */
@@ -70,9 +81,7 @@ export function createApi(provider: BackendProvider) {
   /** Compresses `data` into one raw LZ4 block (no frame: no header, checksum or size). */
   async function compressBlock(data: Bytes | string, options?: BlockCompressOptions | number): Promise<Uint8Array> {
     const o = resolveBlockCompressOptions(options, 'compressBlock');
-    const input = toInputBytes(data);
-    const backend = await provider.get();
-    return backend.compressBlock(input, o.level, o.dictionary);
+    return withBackend([toInputBytes(data), o.dictionary], (b, [input, dict]) => b.compressBlock(input!, o.level, dict!));
   }
 
   /** Synchronous `compressBlock`. In browsers and edge runtimes, call `await init()` first. */
@@ -84,9 +93,8 @@ export function createApi(provider: BackendProvider) {
   /** Decompresses one raw LZ4 block. A number in place of the options is the exact original size. */
   async function decompressBlock(data: Bytes, options: BlockDecompressOptions | number): Promise<Uint8Array> {
     const o = resolveBlockDecompressOptions(options, 'decompressBlock');
-    const input = toBytes(data, 'data');
-    const backend = await provider.get();
-    return backend.decompressBlock(input, o.dictionary, o.size, o.exact);
+    return withBackend([toBytes(data, 'data'), o.dictionary], (b, [input, dict]) =>
+      b.decompressBlock(input!, dict!, o.size, o.exact));
   }
 
   /** Synchronous `decompressBlock`. In browsers and edge runtimes, call `await init()` first. */
@@ -114,7 +122,7 @@ export function createApi(provider: BackendProvider) {
     };
     return new TransformStream<Bytes, Uint8Array>({
       async start() {
-        handle = (await provider.get()).createCStream(o.level, o.blockSize, o.flags, o.dictionary);
+        handle = await withBackend([o.dictionary], (b, [dict]) => b.createCStream(o.level, o.blockSize, o.flags, dict!));
       },
       async transform(chunk, controller) {
         try {
@@ -150,7 +158,7 @@ export function createApi(provider: BackendProvider) {
     };
     return new TransformStream<Bytes, Uint8Array>({
       async start() {
-        handle = (await provider.get()).createDStream(o.dictionary, o.maxOutputSize);
+        handle = await withBackend([o.dictionary], (b, [dict]) => b.createDStream(dict!, o.maxOutputSize));
       },
       async transform(chunk, controller) {
         try {

@@ -65,6 +65,11 @@ function checkBoolean(value: unknown, name: string, fn: string): boolean {
   return value;
 }
 
+// Only a missing (undefined) option takes the default: `{ level: null }` is an error, not level 1.
+function or<T>(value: T | undefined, fallback: T): T {
+  return value === undefined ? fallback : value;
+}
+
 function optionalDictionary(value: Bytes | undefined): Uint8Array | null {
   const dictionary = value === undefined ? null : toBytes(value, 'dictionary');
   return dictionary && dictionary.length > 0 ? dictionary : null;
@@ -94,15 +99,15 @@ export function resolveCompressOptions(
   if (typeof options === 'number') options = { level: options };
   checkOptionsObject(options, fn);
   if (options) checkKeys(options, stream ? STREAM_KEYS : COMPRESS_KEYS, fn, stream ? STREAM_HINTS : COMPRESS_HINTS);
-  const level = checkLevel(options?.level ?? DEFAULT_LEVEL, fn);
-  const blockSize = options?.blockSize ?? 65536;
+  const level = checkLevel(or(options?.level, DEFAULT_LEVEL), fn);
+  const blockSize = or<number>(options?.blockSize, 65536);
   if (!BLOCK_SIZES.includes(blockSize)) {
     throw new RangeError(`${fn}: blockSize must be one of ${BLOCK_SIZES.join(', ')}, got ${String(blockSize)}`);
   }
   let flags = 0;
-  if (checkBoolean(options?.contentChecksum ?? true, 'contentChecksum', fn)) flags |= FLAG_CONTENT_CHECKSUM;
-  if (checkBoolean(options?.blockChecksum ?? false, 'blockChecksum', fn)) flags |= FLAG_BLOCK_CHECKSUM;
-  if (!stream && checkBoolean(options?.contentSize ?? true, 'contentSize', fn)) flags |= FLAG_CONTENT_SIZE;
+  if (checkBoolean(or(options?.contentChecksum, true), 'contentChecksum', fn)) flags |= FLAG_CONTENT_CHECKSUM;
+  if (checkBoolean(or(options?.blockChecksum, false), 'blockChecksum', fn)) flags |= FLAG_BLOCK_CHECKSUM;
+  if (!stream && checkBoolean(or(options?.contentSize, true), 'contentSize', fn)) flags |= FLAG_CONTENT_SIZE;
   return { level, blockSize, flags, dictionary: optionalDictionary(options?.dictionary) };
 }
 
@@ -125,7 +130,7 @@ function checkLimit(value: unknown, name: string, fn: string, max: number): numb
 export function resolveDecompressOptions(options: DecompressOptions | undefined, fn: string): ResolvedDecompressOptions {
   checkOptionsObject(options, fn);
   if (options) checkKeys(options, DECOMPRESS_KEYS, fn);
-  const maxOutputSize = checkLimit(options?.maxOutputSize ?? Infinity, 'maxOutputSize', fn, Infinity);
+  const maxOutputSize = checkLimit(or(options?.maxOutputSize, Infinity), 'maxOutputSize', fn, Infinity);
   return { maxOutputSize, dictionary: optionalDictionary(options?.dictionary) };
 }
 
@@ -140,7 +145,7 @@ export function resolveBlockCompressOptions(options: BlockCompressOptions | numb
   if (typeof options === 'number') options = { level: options };
   checkOptionsObject(options, fn);
   if (options) checkKeys(options, BLOCK_COMPRESS_KEYS, fn);
-  return { level: checkLevel(options?.level ?? DEFAULT_LEVEL, fn), dictionary: optionalDictionary(options?.dictionary) };
+  return { level: checkLevel(or(options?.level, DEFAULT_LEVEL), fn), dictionary: optionalDictionary(options?.dictionary) };
 }
 
 export interface ResolvedBlockDecompressOptions {
