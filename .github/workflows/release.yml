@@ -161,4 +161,7 @@ jobs:
       - uses: actions/download-artifact@v8
         with:
           name: tarball
-      - run: npm publish kodespire-lz4-js-*.tgz --access public --provenance
+      # npm stage publish needs npm 11.15 or later.
+      - run: npm install -g npm@^11.15
+      # Staged: the release waits on npmjs.com until a maintainer approves it with 2FA.
+      - run: npm stage publish ./kodespire-lz4-js-*.tgz --access public --provenance
