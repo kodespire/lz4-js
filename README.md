@@ -1,11 +1,12 @@
 # lz4-js
 
 [![CI](https://github.com/kodespire/lz4-js/actions/workflows/ci.yml/badge.svg)](https://github.com/kodespire/lz4-js/actions/workflows/ci.yml)
+[![React Native](https://github.com/kodespire/lz4-js/actions/workflows/react-native.yml/badge.svg)](https://github.com/kodespire/lz4-js/actions/workflows/react-native.yml)
 
-LZ4 compression for Node.js, Bun, Deno, browsers and edge runtimes, with one API everywhere.
+LZ4 compression for Node.js, Bun, Deno, browsers, edge runtimes and React Native, with one API everywhere.
 
 - **The official library.** Compiled from [lz4/lz4](https://github.com/lz4/lz4) v1.10.0, pinned as a git submodule. Only its BSD-licensed `lib/` is compiled in. A weekly job opens a PR when upstream releases.
-- **Native where possible, WebAssembly everywhere else.** Node.js and Bun use a Node-API addon. Browsers, Deno and Workers use WebAssembly built from the same C code. If no prebuilt binary matches your platform, the package switches to WebAssembly on its own.
+- **Native where possible, WebAssembly everywhere else.** Node.js and Bun use a Node-API addon, and React Native uses a JSI module. Browsers, Deno and Workers use WebAssembly built from the same C code. If no prebuilt binary matches your platform, the package switches to WebAssembly on its own.
 - **No install scripts.** Prebuilt binaries ship inside the package. `npm install` never downloads or compiles anything.
 - **Never returns partial data.** Cut-off frames, corrupt input and output over your size limit all throw. They never return what was decoded so far. (Decompress streams pass data on as it decodes, and then error. See [Streams](#streams).)
 - **Both formats.** The frame format (what the `lz4` command-line tool reads and writes) by default, and the raw block format through separate functions.
@@ -101,6 +102,21 @@ await init();
 const packed = compressSync('hello');
 ```
 
+### React Native
+
+```sh
+npm install @kodespire/lz4-js
+cd ios && pod install
+```
+
+Then rebuild the app (`npx react-native run-ios`, `run-android`, or `npx expo run:ios` and `run:android`). The package contains a C++ TurboModule compiled from the same C code as the other builds. Autolinking adds it to the iOS build (CocoaPods) and the Android build (CMake). It needs React Native 0.84 or later with the New Architecture, which is the default. The API, options and error codes are the same as everywhere else, frames and raw blocks alike.
+
+- **Expo:** works in development builds and EAS builds. **Expo Go can't load it**, because Expo Go only contains Expo's own native code. In Expo Go, calls reject with `ERR_LZ4_NOT_INITIALIZED` and a message saying so. There's no fallback: Hermes has no WebAssembly.
+- **Async calls run on background threads**, so `await compress(bigFile, 12)` doesn't block the JS thread. The sync versions run on the JS thread.
+- **Streams need a `TransformStream`**, and Hermes doesn't have one. Expo installs one. In bare React Native, install [web-streams-polyfill](https://github.com/MattiasBuelens/web-streams-polyfill) and `import 'web-streams-polyfill/polyfill'` once at startup. Without it, `createCompressStream()` throws a `TypeError` that says this. The package doesn't bundle a polyfill: React Native's `fetch` doesn't stream bodies, so there's little to pipe, Expo already ships one, and a second copy would add about 65 KB to every app.
+- **iOS 27 and React Native 0.84:** iOS 27 stops apps that don't use the UIScene lifecycle at launch, and the React Native 0.84 app template has no `SceneDelegate`. The crash isn't caused by lz4-js: the 0.84 template app crashes the same way without it. Add a `SceneDelegate` and a `UIApplicationSceneManifest` entry in `Info.plist`, as newer templates (0.88) and [example/react-native](example/react-native/ios/Lz4Example/SceneDelegate.swift) do.
+- **Web (Expo web, react-native-web):** the web build gets the WebAssembly version, like any browser build. Metro doesn't copy `lz4.wasm`, so put `node_modules/@kodespire/lz4-js/dist/lz4.wasm` in your `public/` folder and call `await init('/lz4.wasm')` before the first call.
+
 ### Untrusted input
 
 A few KB of LZ4 can expand to megabytes (up to about 255 times its size). Always pass `maxOutputSize` when decompressing frames you don't control. Decoding stops as soon as the limit is crossed:
@@ -179,7 +195,7 @@ An unknown option name throws a `TypeError`. A typo like `{ compressionLevel: 9 
 | `ERR_LZ4_TRUNCATED` | The input ended partway through a frame, or was empty; or a block decoded to fewer bytes than `originalSize`. |
 | `ERR_LZ4_OUTPUT_LIMIT` | The output would exceed `maxOutputSize`, or a block's `originalSize`. |
 | `ERR_LZ4_LIBRARY` | lz4 rejected the data: corrupt input, checksum mismatch, wrong dictionary, not LZ4. |
-| `ERR_LZ4_NOT_INITIALIZED` | A sync function was called in a browser or Worker before `await init()`. |
+| `ERR_LZ4_NOT_INITIALIZED` | A sync function was called in a browser or Worker before `await init()`, or the React Native module isn't in the app (Expo Go). |
 | `ERR_LZ4_OUT_OF_MEMORY`, `ERR_LZ4_INVALID_ARGUMENT` | As named. |
 
 ## Behaviour details
@@ -188,7 +204,7 @@ An unknown option name throws a `TypeError`. A typo like `{ compressionLevel: 9 
 - **Concatenated frames** decompress to the concatenated contents, as `lz4 -d` does. **Skippable frames** are skipped. Because joined frames are valid LZ4, input cut off exactly at a frame boundary can't be told apart from complete input. Use one frame per message if that matters.
 - **The legacy format** (`lz4 -l`, used for Linux kernel images) is not supported by `decompress`, and is rejected with `ERR_LZ4_LIBRARY`. Its chunks are raw blocks, so `decompressBlock` can read them.
 - **The content checksum is on by default**, unlike the liblz4 default. It costs 4 bytes per frame. Without it, corruption inside a block can decode silently to wrong bytes. The frame header has its own checksum either way.
-- **The async functions use separate threads only on the native addon**, which runs them on Node's thread pool. The WebAssembly backend runs on the calling thread, so for large inputs in a browser, call it from a Web Worker.
+- **The async functions use separate threads only on the native backends.** The Node addon runs them on Node's thread pool, and React Native on a small pool of its own. The WebAssembly backend runs on the calling thread, so for large inputs in a browser, call it from a Web Worker.
 - **Forcing WebAssembly:** set `LZ4_JS_BACKEND=wasm` in Node.js, or import `@kodespire/lz4-js/wasm` in any runtime.
 
 ## Runtimes
@@ -200,13 +216,14 @@ An unknown option name throws a `TypeError`. A typo like `{ compressionLevel: 9 
 | Deno 2 | WebAssembly | Linux |
 | Chromium, Firefox, WebKit | WebAssembly | Playwright, through Vite |
 | Cloudflare Workers (`workerd` condition) | WebAssembly | `wrangler dev` (workerd) |
+| React Native 0.84+ on iOS and Android (`react-native` condition) | native (JSI) | iOS simulator, Android emulator |
 
 Prebuilt native binaries cover:
 - macOS arm64 and x64
 - Linux x64 and arm64 (glibc 2.28+ and musl)
 - Windows x64 and arm64
 
-Bundlers that understand `new URL('./lz4.wasm', import.meta.url)`, such as Vite, webpack 5 and Parcel, pick up the WebAssembly file automatically. For anything else, serve `@kodespire/lz4-js/lz4.wasm` yourself and pass its URL to `init()`.
+Bundlers that understand `new URL('./lz4.wasm', import.meta.url)`, such as Vite, webpack 5 and Parcel, pick up the WebAssembly file automatically. For anything else, including Metro for the web, serve `@kodespire/lz4-js/lz4.wasm` yourself and pass its URL to `init()`.
 
 ## Development
 
@@ -221,7 +238,17 @@ npm test
 BROWSERS=chromium npx vitest run -c vitest.browser.config.ts
 ```
 
-All compression logic is in `csrc/ljs.c`, which both builds share. `csrc/addon.cc` (Node-API) and `src/wasm-backend.ts` (WebAssembly) only move bytes in and out. The tests run every case against both backends. They also check:
+The React Native example app runs a self-test on a simulator or emulator. Its `npm install` packs the package the way npm would publish it, so build `dist/` first:
+
+```sh
+cd example/react-native
+npm install
+(cd ios && bundle install && bundle exec pod install)
+npm run selftest:ios       # boots a simulator if none is running
+npm run selftest:android   # start an emulator first; needs ANDROID_HOME
+```
+
+All compression logic is in `csrc/ljs.c`, which every build shares. `csrc/addon.cc` (Node-API), `cpp/KodespireLz4Module.cpp` (React Native) and `src/wasm-backend.ts` (WebAssembly) only move bytes in and out. The tests run every case against both backends. They also check:
 - decoding of output from the official CLI, and the CLI decoding ours, raw blocks included (through the legacy format)
 - input cut at every byte offset, for frames and for blocks
 - streaming split at random points
