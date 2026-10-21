@@ -1,0 +1,28 @@
+// React Native (Android) library. The module is C++: cpp/ over csrc/ljs.c and the
+// bundled lz4 sources, compiled into the app by CMakeLists.txt next to this file
+// (see react-native.config.js). This project only runs codegen and provides the
+// package class that autolinking looks for.
+apply plugin: "com.android.library"
+apply plugin: "com.facebook.react"
+
+def safeExtGet(name, fallback) {
+  return rootProject.ext.has(name) ? rootProject.ext.get(name) : fallback
+}
+
+android {
+  namespace "com.kodespire.lz4"
+  compileSdkVersion safeExtGet("compileSdkVersion", 36)
+  defaultConfig {
+    minSdkVersion safeExtGet("minSdkVersion", 24)
+  }
+}
+
+// Must match codegenConfig in ../package.json.
+react {
+  libraryName = "KodespireLz4Spec"
+  codegenJavaPackageName = "com.kodespire.lz4"
+}
+
+dependencies {
+  implementation "com.facebook.react:react-android"
+}
