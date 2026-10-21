@@ -1,7 +1,7 @@
 {
   "name": "@kodespire/lz4-js",
-  "version": "0.1.0",
-  "description": "LZ4 compression for Node.js, Bun, Deno, browsers and edge runtimes. Native bindings to the official lz4/lz4 library with a WebAssembly fallback. Frame and raw block formats.",
+  "version": "0.2.0",
+  "description": "LZ4 compression for Node.js, Bun, Deno, browsers, edge runtimes and React Native. Native bindings to the official lz4/lz4 library with a WebAssembly fallback. Frame and raw block formats.",
   "keywords": [
     "lz4",
     "lz4hc",
@@ -9,7 +9,8 @@
     "decompression",
     "wasm",
     "napi",
-    "stream"
+    "stream",
+    "react-native"
   ],
   "license": "MIT",
   "author": "kodespire",
@@ -31,6 +32,7 @@
       "workerd": "./dist/entry-workerd.js",
       "deno": "./dist/entry-wasm.js",
       "browser": "./dist/entry-wasm.js",
+      "react-native": "./dist/entry-react-native.js",
       "node": "./dist/entry-node.js",
       "default": "./dist/entry-wasm.js"
     },
@@ -46,6 +48,7 @@
     "#load-wasm": {
       "types": "./dist/load-wasm-fetch.d.ts",
       "node": "./dist/load-wasm-node.js",
+      "react-native": "./dist/load-wasm-react-native.js",
       "default": "./dist/load-wasm-fetch.js"
     }
   },
@@ -53,7 +56,23 @@
   "files": [
     "dist",
     "prebuilds",
-    "THIRD_PARTY_NOTICES.md"
+    "THIRD_PARTY_NOTICES.md",
+    "cpp",
+    "csrc/ljs.c",
+    "csrc/ljs.h",
+    "ios",
+    "android/build.gradle",
+    "android/CMakeLists.txt",
+    "android/src",
+    "codegen",
+    "KodespireLz4.podspec",
+    "react-native.config.js",
+    "deps/lz4/lib/LICENSE",
+    "deps/lz4/lib/lz4.[ch]",
+    "deps/lz4/lib/lz4hc.[ch]",
+    "deps/lz4/lib/lz4frame.[ch]",
+    "deps/lz4/lib/lz4frame_static.h",
+    "deps/lz4/lib/xxhash.[ch]"
   ],
   "scripts": {
     "build": "npm run build:native && npm run build:wasm && npm run build:ts",
@@ -66,8 +85,29 @@
     "test": "vitest run",
     "test:watch": "vitest"
   },
+  "codegenConfig": {
+    "name": "KodespireLz4Spec",
+    "type": "modules",
+    "jsSrcsDir": "codegen",
+    "android": {
+      "javaPackageName": "com.kodespire.lz4"
+    },
+    "ios": {
+      "modulesProvider": {
+        "KodespireLz4": "KodespireLz4ModuleProvider"
+      }
+    }
+  },
   "dependencies": {
     "node-gyp-build": "^4.8.4"
+  },
+  "peerDependencies": {
+    "react-native": "*"
+  },
+  "peerDependenciesMeta": {
+    "react-native": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@types/node": "^26.6.5",

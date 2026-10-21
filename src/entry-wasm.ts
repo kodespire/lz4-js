@@ -1,5 +1,5 @@
 // WebAssembly entry: browsers, Deno, and anything without the native addon.
-// Keep the export list in sync with entry-node.ts and entry-workerd.js.
+// Keep the export list in sync with entry-node.ts, entry-workerd.js and entry-react-native.ts.
 import { compileWasm, compileWasmSync } from '#load-wasm';
 
 import { createApi } from './api.js';

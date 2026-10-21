@@ -1,6 +1,6 @@
 // Node.js and Bun entry: the native addon, falling back to WebAssembly when no
 // prebuilt binary matches this platform. Set LZ4_JS_BACKEND=wasm to force WebAssembly.
-// Keep the export list in sync with entry-wasm.ts and entry-workerd.js.
+// Keep the export list in sync with entry-wasm.ts, entry-workerd.js and entry-react-native.ts.
 import { createApi } from './api.js';
 import { compileWasm, compileWasmSync } from './load-wasm-node.js';
 import { loadNativeBackend } from './native-backend.js';

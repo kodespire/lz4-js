@@ -1,7 +1,7 @@
 // Cloudflare Workers entry. Workers cannot compile WebAssembly from bytes at
 // runtime, so the module is imported statically and bundled by wrangler.
 // Copied to dist/ as-is; types come from public.d.ts.
-// Keep the export list in sync with entry-wasm.ts and entry-node.ts.
+// Keep the export list in sync with entry-wasm.ts, entry-node.ts and entry-react-native.ts.
 import wasmModule from './lz4.wasm';
 
 import { createApi } from './api.js';

@@ -1,5 +1,5 @@
 // The documented public API. This file only declares; each entry point
-// (entry-node.ts, entry-wasm.ts, entry-workerd.js) implements it, and
+// (entry-node.ts, entry-wasm.ts, entry-workerd.js, entry-react-native.ts) implements it, and
 // test/types.test-d.ts checks that they match. package.json points "types" here.
 import type {
   BackendKind,
