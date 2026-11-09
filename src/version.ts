@@ -1,6 +1,6 @@
 // Must match deps/lz4 and csrc/ljs.c (checked by test/version.test.ts).
 /** Version of the bundled lz4 library, the same for the native and WebAssembly builds. */
-export const LZ4_VERSION = '1.10.0';
+export const LZ4_VERSION = '1.11.0';
 /** Fastest (lowest-ratio) compression level: the fast compressor at acceleration 65537. */
 export const MIN_LEVEL = -65536;
 /** Highest-ratio compression level (LZ4 HC with the optimal parser). */
